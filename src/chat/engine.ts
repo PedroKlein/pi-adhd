@@ -1,7 +1,6 @@
 /**
  * LLM conversation engine for the side-chat.
- * Manages message history, model selection, and streaming.
- * Uses Pi's ai library (stream/complete) with Model objects from the registry.
+ * Manages message history, model selection, streaming, and usage tracking.
  */
 
 import { stream, complete, type AssistantMessage, type Message } from "@earendil-works/pi-ai";
@@ -11,6 +10,14 @@ export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
   timestamp: number;
+}
+
+export interface UsageStats {
+  inputTokens: number;
+  outputTokens: number;
+  contextTokens: number;
+  cost: number;
+  turns: number;
 }
 
 const SYSTEM_PROMPT = `You are a helpful assistant in a side-chat. Be concise and direct. The user is working on a coding project and has a quick question or needs a brief conversation without disturbing their main workflow.`;
@@ -23,6 +30,7 @@ export class ChatEngine {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private sideModel: any = null;
   private extraContext: string | undefined;
+  private usage: UsageStats = { inputTokens: 0, outputTokens: 0, contextTokens: 0, cost: 0, turns: 0 };
 
   constructor(ctx: ExtensionContext, extraContext?: string) {
     this.ctx = ctx;
@@ -46,6 +54,16 @@ export class ChatEngine {
     return [...this.chatMessages];
   }
 
+  getUsage(): UsageStats {
+    return { ...this.usage };
+  }
+
+  private get systemPrompt(): string {
+    return this.extraContext
+      ? `${SYSTEM_PROMPT}\n\n## Main Conversation Context\n\n${this.extraContext}`
+      : SYSTEM_PROMPT;
+  }
+
   /** Send a user message and get streamed assistant response */
   async send(
     userMessage: string,
@@ -58,7 +76,6 @@ export class ChatEngine {
       timestamp: Date.now(),
     });
 
-    // Add to LLM messages
     this.llmMessages.push({
       role: "user",
       content: [{ type: "text", text: userMessage }],
@@ -80,9 +97,7 @@ export class ChatEngine {
       const eventStream = stream(
         model,
         {
-          systemPrompt: this.extraContext
-            ? `${SYSTEM_PROMPT}\n\n## Main Conversation Context\n\n${this.extraContext}`
-            : SYSTEM_PROMPT,
+          systemPrompt: this.systemPrompt,
           messages: [...this.llmMessages],
         },
         {
@@ -108,13 +123,19 @@ export class ChatEngine {
         }
       }
 
-      // Store the final message for conversation continuity
       if (finalMessage) {
         this.llmMessages.push(finalMessage);
-      }
 
-      // Extract text from final message if available
-      if (finalMessage) {
+        // Track usage
+        if (finalMessage.usage) {
+          this.usage.inputTokens += finalMessage.usage.input;
+          this.usage.outputTokens += finalMessage.usage.output;
+          this.usage.contextTokens = finalMessage.usage.totalTokens;
+          this.usage.cost += finalMessage.usage.cost?.total ?? 0;
+        }
+        this.usage.turns++;
+
+        // Extract text from final message
         const textContent = finalMessage.content
           .filter((c): c is { type: "text"; text: string } => c.type === "text")
           .map((c) => c.text)
