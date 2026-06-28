@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "description": "Attention management for Pi — sticky notes, side-chat, and reminders",
   "type": "module",
-  "main": "dist/index.js",
+  "main": "./src/index.ts",
   "types": "dist/index.d.ts",
   "exports": {
     ".": {
@@ -22,12 +22,11 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src/ tests/",
-    "clean": "rm -rf dist",
-    "prepare": "npm run build"
+    "clean": "rm -rf dist"
   },
   "pi": {
     "extensions": [
-      "dist/index.js"
+      "./src/index.ts"
     ]
   },
   "keywords": [
